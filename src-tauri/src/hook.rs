@@ -1,27 +1,34 @@
 //! CLI `hook <event>` subcommand.
 //!
 //! Claude Code (and future agents) invoke this binary as a hook — they
-//! pipe a JSON payload on stdin and block on the exit code. We turn that
-//! payload into an event file under `~/.vibeisland/events/`, then exit
-//! quickly. The session store (issue #12) picks the file up via the
-//! watcher (#11) and routes it to the right session.
+//! pipe a JSON payload on stdin and read the exit code + stdout. For
+//! most events the hook writes one JSON file under `~/.vibeisland/events/`
+//! and exits immediately. For `pre-tool-use`, the hook additionally
+//! BLOCKS up to 5 minutes waiting for the user to approve / deny in the
+//! overlay, then prints a Claude Code-compatible permission decision
+//! on stdout.
+//!
+//! Response plumbing is described in [`vibeisland_agents::response`].
 //!
 //! Contract:
-//! - Reads stdin (may be empty / invalid JSON — never crashes)
-//! - Writes one file per invocation, atomically (tmp + rename)
-//! - Returns exit 0 in <100ms on the happy path
-//! - Logs failures to `~/.vibeisland/hook.log` (append)
+//! - stdin may be empty / invalid JSON — never crashes
+//! - event file is written atomically (tmp + rename)
+//! - non-pre-tool-use events exit in <100ms
+//! - pre-tool-use blocks until response OR [`DEFAULT_TIMEOUT`] → deny
+//! - failures are logged to `~/.vibeisland/hook.log` (append) and the
+//!   process still exits cleanly so it cannot wedge the agent
 
 use std::collections::BTreeMap;
 use std::env;
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process;
 
 use chrono::Utc;
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
+use vibeisland_agents::response::{self, HookDecision, DEFAULT_TIMEOUT};
 use vibeisland_agents::HookPayload;
 
 #[derive(Debug, Clone, Copy, ValueEnum, Serialize, Deserialize)]
@@ -49,29 +56,44 @@ impl HookEvent {
 
 /// Entry point used by `main.rs` — returns the exit code.
 pub fn run(event: HookEvent) -> i32 {
-    match run_inner(event) {
-        Ok(()) => 0,
+    let payload = match build_payload(event) {
+        Ok(p) => p,
         Err(err) => {
             let _ = log_error(event, &err);
-            // Intentionally still exit 0: a broken hook must NEVER block
-            // the underlying agent. Failures go to the log.
+            return 0;
+        }
+    };
+
+    let base = match vibeisland_home() {
+        Some(h) => h,
+        None => return 0,
+    };
+
+    if let Err(err) = write_event_file(&base, &payload) {
+        let _ = log_error(event, &err);
+        // Fall through — for pre-tool-use we can still try to block
+        // since the response file is independent.
+    }
+
+    match event {
+        HookEvent::PreToolUse => {
+            let responses_dir = base.join("responses");
+            let decision =
+                response::wait_for_decision(&responses_dir, &payload.id, DEFAULT_TIMEOUT)
+                    .unwrap_or(HookDecision::Deny {
+                        reason: Some(format!(
+                            "VibeIsland: no decision within {}s — default deny",
+                            DEFAULT_TIMEOUT.as_secs()
+                        )),
+                    });
+            print_claude_code_decision(&decision);
             0
         }
+        _ => 0,
     }
 }
 
-fn run_inner(event: HookEvent) -> std::io::Result<()> {
-    let home =
-        home_dir().ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no HOME"))?;
-    let events_dir = home.join(".vibeisland").join("events");
-    fs::create_dir_all(&events_dir)?;
-    // 0700 (best effort; Windows doesn't care)
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&events_dir, fs::Permissions::from_mode(0o700));
-    }
-
+fn build_payload(event: HookEvent) -> std::io::Result<HookPayload> {
     let mut stdin_buf = String::new();
     std::io::stdin().read_to_string(&mut stdin_buf).ok();
 
@@ -84,14 +106,10 @@ fn run_inner(event: HookEvent) -> std::io::Result<()> {
         }
     };
 
-    let ts = Utc::now();
-    let id = uuid::Uuid::new_v4().to_string();
-    let filename = format!("{}-{}.json", ts.format("%Y%m%dT%H%M%S%3f"), &id[..8]);
-
-    let record = HookPayload {
+    Ok(HookPayload {
         event: event.as_str().to_string(),
-        id,
-        timestamp: ts.to_rfc3339(),
+        id: uuid::Uuid::new_v4().to_string(),
+        timestamp: Utc::now().to_rfc3339(),
         payload,
         raw_payload,
         session_id: env::var("CLAUDE_SESSION_ID")
@@ -100,9 +118,24 @@ fn run_inner(event: HookEvent) -> std::io::Result<()> {
         cwd: env::current_dir().ok().map(|p| p.display().to_string()),
         pid: process::id(),
         env: capture_env(),
-    };
+    })
+}
 
-    write_atomic(&events_dir, &filename, &record)
+fn write_event_file(base: &Path, payload: &HookPayload) -> std::io::Result<()> {
+    let events_dir = base.join("events");
+    fs::create_dir_all(&events_dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&events_dir, fs::Permissions::from_mode(0o700));
+    }
+    let ts = Utc::now();
+    let filename = format!(
+        "{}-{}.json",
+        ts.format("%Y%m%dT%H%M%S%3f"),
+        &payload.id[..8]
+    );
+    write_atomic(&events_dir, &filename, payload)
 }
 
 fn capture_env() -> BTreeMap<String, String> {
@@ -126,11 +159,7 @@ fn capture_env() -> BTreeMap<String, String> {
         .collect()
 }
 
-fn write_atomic(
-    dir: &std::path::Path,
-    filename: &str,
-    record: &HookPayload,
-) -> std::io::Result<()> {
+fn write_atomic(dir: &Path, filename: &str, record: &HookPayload) -> std::io::Result<()> {
     let final_path = dir.join(filename);
     let tmp_path = dir.join(format!(".{filename}.tmp"));
     {
@@ -148,13 +177,12 @@ fn write_atomic(
 }
 
 fn log_error(event: HookEvent, err: &std::io::Error) -> std::io::Result<()> {
-    let home = match home_dir() {
+    let base = match vibeisland_home() {
         Some(h) => h,
         None => return Ok(()),
     };
-    let dir = home.join(".vibeisland");
-    fs::create_dir_all(&dir)?;
-    let log_path = dir.join("hook.log");
+    fs::create_dir_all(&base)?;
+    let log_path = base.join("hook.log");
     let mut f = OpenOptions::new()
         .create(true)
         .append(true)
@@ -169,12 +197,35 @@ fn log_error(event: HookEvent, err: &std::io::Error) -> std::io::Result<()> {
     )
 }
 
-fn home_dir() -> Option<PathBuf> {
-    // $VIBEISLAND_HOME overrides for tests and portable installs.
-    if let Ok(h) = env::var("VIBEISLAND_HOME") {
-        return Some(PathBuf::from(h));
+/// Emit a Claude Code PreToolUse decision to stdout. The shape matches
+/// the `hookSpecificOutput` protocol Claude Code expects so it will
+/// honor `allow` / `deny`.
+fn print_claude_code_decision(decision: &HookDecision) {
+    let (perm, reason) = match decision {
+        HookDecision::Approve => ("allow", None),
+        HookDecision::Deny { reason } => ("deny", reason.clone()),
+        HookDecision::Answer { label, .. } => (
+            "deny",
+            Some(format!("User picked: {label} (via VibeIsland)")),
+        ),
+    };
+    let mut output = serde_json::json!({
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": perm,
+        }
+    });
+    if let Some(r) = reason {
+        output["hookSpecificOutput"]["permissionDecisionReason"] = serde_json::Value::String(r);
     }
-    directories::BaseDirs::new().map(|b| b.home_dir().to_path_buf())
+    println!("{}", serde_json::to_string(&output).unwrap_or_default());
+}
+
+fn vibeisland_home() -> Option<PathBuf> {
+    if let Ok(h) = env::var("VIBEISLAND_HOME") {
+        return Some(PathBuf::from(h).join(".vibeisland"));
+    }
+    directories::BaseDirs::new().map(|b| b.home_dir().join(".vibeisland"))
 }
 
 #[cfg(test)]
@@ -218,18 +269,58 @@ mod tests {
     }
 
     #[test]
-    fn run_with_empty_stdin_writes_record_with_null_payload() {
-        let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("VIBEISLAND_HOME", tmp.path());
-        let result = run_inner(HookEvent::Stop);
-        assert!(result.is_ok());
-        let events = fs::read_dir(tmp.path().join(".vibeisland/events")).unwrap();
-        let files: Vec<_> = events.filter_map(|e| e.ok()).collect();
-        assert_eq!(files.len(), 1);
-        let content = fs::read_to_string(files[0].path()).unwrap();
-        let v: serde_json::Value = serde_json::from_str(&content).unwrap();
-        assert_eq!(v["event"], "stop");
-        assert!(v["payload"].is_null());
-        std::env::remove_var("VIBEISLAND_HOME");
+    fn claude_code_json_for_approve_has_allow() {
+        let buffer = render_decision(&HookDecision::Approve);
+        let v: serde_json::Value = serde_json::from_str(&buffer).unwrap();
+        assert_eq!(v["hookSpecificOutput"]["permissionDecision"], "allow");
+        assert!(v["hookSpecificOutput"]["permissionDecisionReason"].is_null());
+    }
+
+    #[test]
+    fn claude_code_json_for_deny_includes_reason() {
+        let buffer = render_decision(&HookDecision::Deny {
+            reason: Some("nope".into()),
+        });
+        let v: serde_json::Value = serde_json::from_str(&buffer).unwrap();
+        assert_eq!(v["hookSpecificOutput"]["permissionDecision"], "deny");
+        assert_eq!(v["hookSpecificOutput"]["permissionDecisionReason"], "nope");
+    }
+
+    #[test]
+    fn claude_code_json_for_answer_is_deny_with_label() {
+        let buffer = render_decision(&HookDecision::Answer {
+            option_id: "o1".into(),
+            label: "Option A".into(),
+        });
+        let v: serde_json::Value = serde_json::from_str(&buffer).unwrap();
+        assert_eq!(v["hookSpecificOutput"]["permissionDecision"], "deny");
+        let reason = v["hookSpecificOutput"]["permissionDecisionReason"]
+            .as_str()
+            .unwrap();
+        assert!(reason.contains("Option A"));
+    }
+
+    /// Helper that mirrors `print_claude_code_decision` but returns the
+    /// rendered string instead of writing to stdout, so we can assert
+    /// on it without capturing global stdout.
+    fn render_decision(decision: &HookDecision) -> String {
+        let (perm, reason) = match decision {
+            HookDecision::Approve => ("allow", None),
+            HookDecision::Deny { reason } => ("deny", reason.clone()),
+            HookDecision::Answer { label, .. } => (
+                "deny",
+                Some(format!("User picked: {label} (via VibeIsland)")),
+            ),
+        };
+        let mut output = serde_json::json!({
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": perm,
+            }
+        });
+        if let Some(r) = reason {
+            output["hookSpecificOutput"]["permissionDecisionReason"] = serde_json::Value::String(r);
+        }
+        serde_json::to_string(&output).unwrap()
     }
 }

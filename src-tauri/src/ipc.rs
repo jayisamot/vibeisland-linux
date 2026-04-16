@@ -6,29 +6,38 @@
 //! On startup, `AppState` holds the shared [`SessionStore`] and spawns
 //! an [`EventWatcher`]; deltas are forwarded to the webview as Tauri
 //! events `session:new` / `session:updated` / `session:closed`.
+//!
+//! approve/deny/answer commands write a one-shot response file under
+//! `~/.vibeisland/responses/<action_id>.json` so the blocking hook
+//! (issue #14) can unblock Claude Code with the user's choice.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
+use vibeisland_agents::response::{self, HookDecision};
 use vibeisland_agents::{AgentRegistry, AgentSession, EventWatcher, SessionDelta, SessionStore};
 
 /// Shared application state mounted on the Tauri app via `manage`.
 pub struct AppState {
     pub store: Arc<SessionStore>,
     pub registry: Arc<AgentRegistry>,
+    pub base: PathBuf,
     // Hold the watcher alive for the process lifetime.
     pub _watcher: EventWatcher,
 }
 
 impl AppState {
     pub async fn init(app: &AppHandle) -> std::io::Result<Self> {
-        let home = home_dir()
+        let home = user_home_dir()
             .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no HOME"))?;
         let base = home.join(".vibeisland");
         let events_dir = base.join("events");
+        let responses_dir = base.join("responses");
         let sessions_path = base.join("sessions.json");
+
+        tokio::fs::create_dir_all(&responses_dir).await?;
 
         let store = Arc::new(SessionStore::load(sessions_path).await?);
         let registry = Arc::new(AgentRegistry::new());
@@ -39,8 +48,13 @@ impl AppState {
         Ok(Self {
             store,
             registry,
+            base,
             _watcher: watcher,
         })
+    }
+
+    fn responses_dir(&self) -> PathBuf {
+        self.base.join("responses")
     }
 }
 
@@ -71,7 +85,7 @@ fn emit_delta(app: &AppHandle, delta: &SessionDelta) {
     }
 }
 
-fn home_dir() -> Option<PathBuf> {
+fn user_home_dir() -> Option<PathBuf> {
     if let Ok(h) = std::env::var("VIBEISLAND_HOME") {
         return Some(PathBuf::from(h));
     }
@@ -103,14 +117,10 @@ pub async fn approve(
             .approve(&session_id, &action_id)
             .await
             .map_err(|e| e.to_string())?;
-    } else {
-        tracing::warn!(
-            session_id,
-            action_id,
-            agent = session.agent_id,
-            "approve called but no adapter registered (ok for phase 1 until #9)"
-        );
     }
+    response::write_decision(&state.responses_dir(), &action_id, &HookDecision::Approve)
+        .await
+        .map_err(|e| format!("write decision: {e}"))?;
     if let Some(delta) = state.store.mark_resolved(&session_id).await {
         emit_delta(&app, &delta);
     }
@@ -123,6 +133,7 @@ pub async fn deny(
     state: State<'_, AppState>,
     session_id: String,
     action_id: String,
+    reason: Option<String>,
 ) -> Result<(), String> {
     let session = state
         .store
@@ -134,9 +145,14 @@ pub async fn deny(
             .deny(&session_id, &action_id)
             .await
             .map_err(|e| e.to_string())?;
-    } else {
-        tracing::warn!(session_id, action_id, "deny called with no adapter");
     }
+    response::write_decision(
+        &state.responses_dir(),
+        &action_id,
+        &HookDecision::Deny { reason },
+    )
+    .await
+    .map_err(|e| format!("write decision: {e}"))?;
     if let Some(delta) = state.store.mark_resolved(&session_id).await {
         emit_delta(&app, &delta);
     }
@@ -149,7 +165,8 @@ pub async fn answer_question(
     state: State<'_, AppState>,
     session_id: String,
     question_id: String,
-    answer: String,
+    option_id: String,
+    label: String,
 ) -> Result<(), String> {
     let session = state
         .store
@@ -158,12 +175,17 @@ pub async fn answer_question(
         .ok_or_else(|| format!("unknown session: {session_id}"))?;
     if let Some(agent) = state.registry.get(&session.agent_id) {
         agent
-            .answer(&session_id, &question_id, &answer)
+            .answer(&session_id, &question_id, &label)
             .await
             .map_err(|e| e.to_string())?;
-    } else {
-        tracing::warn!(session_id, question_id, "answer called with no adapter");
     }
+    response::write_decision(
+        &state.responses_dir(),
+        &question_id,
+        &HookDecision::Answer { option_id, label },
+    )
+    .await
+    .map_err(|e| format!("write decision: {e}"))?;
     if let Some(delta) = state.store.mark_resolved(&session_id).await {
         emit_delta(&app, &delta);
     }
@@ -172,8 +194,6 @@ pub async fn answer_question(
 
 #[tauri::command]
 pub async fn focus_terminal(_session_id: String) -> Result<(), String> {
-    // Real implementation lands with #27 (frontend wiring) once the
-    // terminal locators in #21-#25 exist.
     Err("focus_terminal not implemented yet (issue #27)".to_string())
 }
 
@@ -189,6 +209,5 @@ pub async fn get_config() -> Result<Config, String> {
 
 #[tauri::command]
 pub async fn set_config(_config: Config) -> Result<(), String> {
-    // Real implementation lands with #32.
     Ok(())
 }

@@ -67,11 +67,12 @@ export function useAgentState() {
     [],
   );
   const answer = useCallback(
-    (session_id: string, question_id: string, answer: string) =>
+    (session_id: string, question_id: string, option_id: string, label: string) =>
       invoke<void>("answer_question", {
         sessionId: session_id,
         questionId: question_id,
-        answer,
+        optionId: option_id,
+        label,
       }),
     [],
   );
