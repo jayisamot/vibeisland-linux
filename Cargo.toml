@@ -32,6 +32,8 @@ async-trait = "0.1"
 clap = { version = "4", features = ["derive"] }
 directories = "5"
 tempfile = "3"
+notify = "6"
+futures = "0.3"
 
 vibeisland-agents = { path = "crates/agents" }
 vibeisland-terminal = { path = "crates/terminal" }

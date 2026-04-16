@@ -17,6 +17,8 @@ tokio.workspace = true
 tracing.workspace = true
 uuid.workspace = true
 chrono.workspace = true
+notify.workspace = true
+futures.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

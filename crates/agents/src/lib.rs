@@ -12,9 +12,11 @@
 
 pub mod event;
 pub mod session_store;
+pub mod watcher;
 
 pub use event::HookPayload;
 pub use session_store::{SessionDelta, SessionStore};
+pub use watcher::EventWatcher;
 
 use std::collections::BTreeMap;
 
