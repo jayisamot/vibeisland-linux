@@ -10,6 +10,12 @@
 
 #![forbid(unsafe_code)]
 
+pub mod event;
+pub mod session_store;
+
+pub use event::HookPayload;
+pub use session_store::{SessionDelta, SessionStore};
+
 use std::collections::BTreeMap;
 
 use async_trait::async_trait;

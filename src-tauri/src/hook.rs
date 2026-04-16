@@ -12,6 +12,7 @@
 //! - Returns exit 0 in <100ms on the happy path
 //! - Logs failures to `~/.vibeisland/hook.log` (append)
 
+use std::collections::BTreeMap;
 use std::env;
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
@@ -21,6 +22,7 @@ use std::process;
 use chrono::Utc;
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
+use vibeisland_agents::HookPayload;
 
 #[derive(Debug, Clone, Copy, ValueEnum, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -43,28 +45,6 @@ impl HookEvent {
             Self::Notification => "notification",
         }
     }
-}
-
-#[derive(Debug, Serialize)]
-struct EventRecord {
-    /// Hook event name (e.g. `"pre-tool-use"`).
-    event: &'static str,
-    /// Unique event id (uuid v4).
-    id: String,
-    /// ISO-8601 UTC timestamp.
-    timestamp: String,
-    /// Raw JSON payload read from stdin (null when stdin was empty/invalid).
-    payload: Option<serde_json::Value>,
-    /// Text captured when the payload didn't parse as JSON.
-    raw_payload: Option<String>,
-    /// `CLAUDE_SESSION_ID` / equivalent env var when present.
-    session_id: Option<String>,
-    /// Current working directory of the hook process.
-    cwd: Option<String>,
-    /// Process id of this hook invocation.
-    pid: u32,
-    /// Relevant env vars captured for terminal detection (TERM_PROGRAM, etc.).
-    env: std::collections::BTreeMap<String, String>,
 }
 
 /// Entry point used by `main.rs` — returns the exit code.
@@ -106,10 +86,10 @@ fn run_inner(event: HookEvent) -> std::io::Result<()> {
 
     let ts = Utc::now();
     let id = uuid::Uuid::new_v4().to_string();
-    let filename = format!("{}-{}.json", ts.format("%Y%m%dT%H%M%S%3f"), &id[..8],);
+    let filename = format!("{}-{}.json", ts.format("%Y%m%dT%H%M%S%3f"), &id[..8]);
 
-    let record = EventRecord {
-        event: event.as_str(),
+    let record = HookPayload {
+        event: event.as_str().to_string(),
         id,
         timestamp: ts.to_rfc3339(),
         payload,
@@ -125,7 +105,7 @@ fn run_inner(event: HookEvent) -> std::io::Result<()> {
     write_atomic(&events_dir, &filename, &record)
 }
 
-fn capture_env() -> std::collections::BTreeMap<String, String> {
+fn capture_env() -> BTreeMap<String, String> {
     let keys = [
         "TERM_PROGRAM",
         "TERM",
@@ -149,7 +129,7 @@ fn capture_env() -> std::collections::BTreeMap<String, String> {
 fn write_atomic(
     dir: &std::path::Path,
     filename: &str,
-    record: &EventRecord,
+    record: &HookPayload,
 ) -> std::io::Result<()> {
     let final_path = dir.join(filename);
     let tmp_path = dir.join(format!(".{filename}.tmp"));
@@ -210,7 +190,6 @@ mod tests {
             HookEvent::Stop,
             HookEvent::Notification,
         ] {
-            // serialize through serde to make sure rename_all = kebab-case matches as_str
             let serialized = serde_json::to_string(&e).unwrap();
             let expected = format!("\"{}\"", e.as_str());
             assert_eq!(serialized, expected);
@@ -220,11 +199,11 @@ mod tests {
     #[test]
     fn write_atomic_creates_valid_json() {
         let dir = tempfile::tempdir().unwrap();
-        let record = EventRecord {
-            event: "pre-tool-use",
+        let record = HookPayload {
+            event: "pre-tool-use".into(),
             id: "abc-123".into(),
             timestamp: "2026-04-16T00:00:00Z".into(),
-            payload: Some(serde_json::json!({"tool": "Bash"})),
+            payload: Some(serde_json::json!({"tool_name": "Bash"})),
             raw_payload: None,
             session_id: None,
             cwd: Some("/tmp".into()),
@@ -235,16 +214,13 @@ mod tests {
         let content = fs::read_to_string(dir.path().join("x.json")).unwrap();
         let v: serde_json::Value = serde_json::from_str(&content).unwrap();
         assert_eq!(v["event"], "pre-tool-use");
-        assert_eq!(v["payload"]["tool"], "Bash");
+        assert_eq!(v["payload"]["tool_name"], "Bash");
     }
 
     #[test]
     fn run_with_empty_stdin_writes_record_with_null_payload() {
         let tmp = tempfile::tempdir().unwrap();
         std::env::set_var("VIBEISLAND_HOME", tmp.path());
-        // run() will call read_to_string which returns Ok("") when stdin is a
-        // closed file descriptor in a test harness. We can't easily redirect
-        // stdin, so call run_inner directly — it accepts an empty stdin path.
         let result = run_inner(HookEvent::Stop);
         assert!(result.is_ok());
         let events = fs::read_dir(tmp.path().join(".vibeisland/events")).unwrap();
