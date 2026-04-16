@@ -57,6 +57,12 @@ export type EventKind =
   | "stop"
   | "notification";
 
+export interface AgentStatus {
+  id: string;
+  name: string;
+  installed: boolean;
+}
+
 /** Helper to narrow a PendingAction. */
 export function isApprovalAction(
   a: PendingAction | null | undefined,

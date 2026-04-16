@@ -1,18 +1,29 @@
-import { useCallback, useEffect, useMemo, useReducer } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { AgentSession } from "@/types/agent";
+import type { AgentSession, AgentStatus } from "@/types/agent";
 
 /**
- * React hook subscribing to the backend session stream.
+ * React hook subscribing to the backend session stream and exposing
+ * agent install/uninstall controls.
  *
- * - On mount, fetches the initial state via `invoke('list_sessions')`.
- * - Listens to `session:new` / `session:updated` / `session:closed`
- *   events emitted by `ipc.rs::spawn_delta_bridge`.
- * - Exposes memoized `approve`, `deny`, `answer` wrappers.
+ * - On mount, fetches initial sessions + registered agents.
+ * - Listens to `session:new` / `session:updated` / `session:closed`.
+ * - Exposes memoized wrappers for approve / deny / answer / focus
+ *   terminal / install / uninstall / refresh.
  */
 export function useAgentState() {
   const [state, dispatch] = useReducer(sessionReducer, { byId: {} });
+  const [agents, setAgents] = useState<AgentStatus[]>([]);
+
+  const refreshAgents = useCallback(async () => {
+    try {
+      const list = await invoke<AgentStatus[]>("list_agents");
+      setAgents(list);
+    } catch (err) {
+      console.error("list_agents failed", err);
+    }
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -26,6 +37,7 @@ export function useAgentState() {
       } catch (err) {
         console.error("list_sessions failed", err);
       }
+      await refreshAgents();
 
       unlisteners.push(
         await listen<AgentSession>("session:new", (e) => {
@@ -48,7 +60,7 @@ export function useAgentState() {
       mounted = false;
       unlisteners.forEach((u) => u());
     };
-  }, []);
+  }, [refreshAgents]);
 
   const sessions = useMemo(() => {
     const arr = Object.values(state.byId);
@@ -81,7 +93,32 @@ export function useAgentState() {
     [],
   );
 
-  return { sessions, approve, deny, answer, focusTerminal };
+  const installAgent = useCallback(
+    async (agent_id: string) => {
+      await invoke<void>("install_agent", { agentId: agent_id });
+      await refreshAgents();
+    },
+    [refreshAgents],
+  );
+  const uninstallAgent = useCallback(
+    async (agent_id: string) => {
+      await invoke<void>("uninstall_agent", { agentId: agent_id });
+      await refreshAgents();
+    },
+    [refreshAgents],
+  );
+
+  return {
+    sessions,
+    agents,
+    approve,
+    deny,
+    answer,
+    focusTerminal,
+    installAgent,
+    uninstallAgent,
+    refreshAgents,
+  };
 }
 
 // ---------- reducer ----------

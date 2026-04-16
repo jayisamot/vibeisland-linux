@@ -28,6 +28,9 @@ pub fn run() {
             ipc::focus_terminal,
             ipc::get_config,
             ipc::set_config,
+            ipc::list_agents,
+            ipc::install_agent,
+            ipc::uninstall_agent,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

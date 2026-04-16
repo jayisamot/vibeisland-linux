@@ -201,6 +201,47 @@ pub async fn focus_terminal(_session_id: String) -> Result<(), String> {
     Err("focus_terminal not implemented yet (issue #27)".to_string())
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentStatus {
+    pub id: String,
+    pub name: String,
+    pub installed: bool,
+}
+
+#[tauri::command]
+pub async fn list_agents(state: State<'_, AppState>) -> Result<Vec<AgentStatus>, String> {
+    let ids: Vec<String> = state.registry.ids().map(|s| (*s).to_string()).collect();
+    let mut out = Vec::with_capacity(ids.len());
+    for id in ids {
+        if let Some(agent) = state.registry.get(&id) {
+            out.push(AgentStatus {
+                id: id.clone(),
+                name: agent.name().to_string(),
+                installed: agent.is_installed().await,
+            });
+        }
+    }
+    Ok(out)
+}
+
+#[tauri::command]
+pub async fn install_agent(state: State<'_, AppState>, agent_id: String) -> Result<(), String> {
+    let agent = state
+        .registry
+        .get(&agent_id)
+        .ok_or_else(|| format!("unknown agent: {agent_id}"))?;
+    agent.install().await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn uninstall_agent(state: State<'_, AppState>, agent_id: String) -> Result<(), String> {
+    let agent = state
+        .registry
+        .get(&agent_id)
+        .ok_or_else(|| format!("unknown agent: {agent_id}"))?;
+    agent.uninstall().await.map_err(|e| e.to_string())
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
     pub schema_version: u32,
