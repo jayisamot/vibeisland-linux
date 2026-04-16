@@ -39,3 +39,6 @@ Thumbs.db
 *.deb
 *.rpm
 *.flatpak
+
+# Husky cache
+.husky/_/
