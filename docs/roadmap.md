@@ -7,25 +7,25 @@ Voir aussi : [brief](./brief.md) · [research](./research.md) · [architecture](
 ## Légende
 
 - `auto` = label `auto-execute` — confiance haute, Autopilot peut dispatcher
-- `human` = label `needs-human` — décision/recherche/review humaine requise
+- `human` = label `needs-human` — décision / recherche / review humaine requise
 - ✅ = issue fermée · ⏳ = issue ouverte
 
 ---
 
 ## Phase 0 — Project scaffolding, Tauri setup, CI (1-2 jours)
 
-- ⏳ [#1 Init Tauri v2 project avec React + TypeScript + Tailwind](../../../issues/1) — `auto` `agent:scaffolder`
-- ⏳ [#2 Configurer Tauri pour overlay flottant (decorations, always-on-top, transparent)](../../../issues/2) — `auto` `agent:scaffolder`
-- ⏳ [#3 Setup Cargo workspace avec crates internes (agents, terminal, sound)](../../../issues/3) — `auto` `agent:rust-backend`
-- ⏳ [#4 GitHub Actions CI : lint Rust + TypeScript + tests](../../../issues/4) — `auto` `agent:packager`
-- ⏳ [#5 README et CONTRIBUTING.md](../../../issues/5) — `auto` `agent:scaffolder`
-- ⏳ [#6 License MIT](../../../issues/6) — `auto` `agent:scaffolder`
-- ⏳ [#7 Pre-commit hooks (rustfmt, clippy, prettier, eslint)](../../../issues/7) — `auto` `agent:scaffolder`
+- ⏳ [#1 Init Tauri v2 project avec React + TypeScript + Tailwind](../../../issues/1) — `auto` `agent:devops`
+- ⏳ [#2 Configurer Tauri pour overlay flottant (decorations, always-on-top, transparent)](../../../issues/2) — `auto` `agent:devops`
+- ⏳ [#3 Setup Cargo workspace avec crates internes (agents, terminal, sound)](../../../issues/3) — `auto` `agent:devops`
+- ⏳ [#4 GitHub Actions CI : lint Rust + TypeScript + tests](../../../issues/4) — `auto` `agent:devops`
+- ⏳ [#5 README et CONTRIBUTING.md](../../../issues/5) — `auto` `agent:devops`
+- ⏳ [#6 License MIT](../../../issues/6) — `auto` `agent:devops`
+- ⏳ [#7 Pre-commit hooks (rustfmt, clippy, prettier, eslint)](../../../issues/7) — `auto` `agent:devops`
 
 ## Phase 1 — MVP Claude Code + overlay + approve/deny (1 semaine)
 
-- ⏳ [#8 Trait Agent Rust (contrat generique pour tous les adapters)](../../../issues/8) — `auto` `agent:rust-backend`
-- ⏳ [#9 Adapter Claude Code : install/uninstall hooks dans ~/.claude/settings.json](../../../issues/9) — `human` `agent:rust-backend`
+- ⏳ [#8 Trait Agent Rust (contrat generique pour tous les adapters)](../../../issues/8) — `auto` `agent:feature`
+- ⏳ [#9 Adapter Claude Code : install/uninstall hooks dans ~/.claude/settings.json](../../../issues/9) — `human` `agent:feature`
 - ⏳ [#10 CLI subcommand `vibeisland-linux hook <event>` (capture hooks Claude Code)](../../../issues/10) — `auto` `agent:feature`
 - ⏳ [#11 File watcher `~/.vibeisland/events/` avec crate `notify`](../../../issues/11) — `auto` `agent:feature`
 - ⏳ [#12 Session state store `~/.vibeisland/sessions.json` (read/write atomique)](../../../issues/12) — `auto` `agent:feature`
@@ -66,10 +66,25 @@ Voir aussi : [brief](./brief.md) · [research](./research.md) · [architecture](
 
 ---
 
+## Statistiques MVP (phases 0-3)
+
+- **Total** : 40 issues
+- **auto-execute** : 33 (Autopilot peut dispatcher)
+- **needs-human** : 7 (review/décision humaine)
+
+| Phase | Total | auto | human |
+|-------|-------|------|-------|
+| 0 | 7 | 7 | 0 |
+| 1 | 13 | 11 | 2 |
+| 2 | 14 | 12 | 2 |
+| 3 | 6 | 3 | 3 |
+
+---
+
 ## Phases suivantes (hors MVP)
 
 - **Phase 4** — Codex + Gemini CLI + Cursor (2 semaines)
-- **Phase 5** — OpenCode / Droid / Qoder / Copilot / CodeBuddy / Kiro + tray mode + Flatpak (3 semaines)
+- **Phase 5** — OpenCode / Droid / Qoder / Copilot / CodeBuddy / Kiro + tray + Flatpak (3 semaines)
 - **Phase 6** — v1.0 feature parity avec VibeIsland macOS
 
-_Généré automatiquement. Modifier via la liste d'issues GitHub._
+_Généré automatiquement depuis les issues GitHub. Source de vérité : la liste d'issues, ce fichier est un index._
