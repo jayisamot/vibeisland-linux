@@ -1,5 +1,9 @@
 #!/usr/bin/env sh
 
+# Ensure rustup-installed tools (rustfmt, clippy) are on PATH
+# for non-login shells that skip .bashrc / .profile.
+[ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
+
 # Run lint-staged (handles eslint + prettier + rustfmt on staged files)
 npx lint-staged || exit 1
 
