@@ -2,6 +2,15 @@
   "name": "vibeisland-linux",
   "private": true,
   "version": "0.1.0",
+  "description": "Supervise your AI coding agents from a Linux overlay panel",
+  "license": "MIT",
+  "author": "Jay Isamot",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jayisamot/vibeisland-linux.git"
+  },
+  "homepage": "https://github.com/jayisamot/vibeisland-linux",
+  "bugs": "https://github.com/jayisamot/vibeisland-linux/issues",
   "type": "module",
   "scripts": {
     "dev": "vite",
