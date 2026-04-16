@@ -1,0 +1,15 @@
+[package]
+name = "vibeisland-sound"
+description = "Sound player for VibeIsland Linux (rodio-based)"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+# rodio added when SoundPlayer is implemented (issue #30)

@@ -1,4 +1,9 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+
+use vibeisland_agents as _;
+use vibeisland_sound as _;
+use vibeisland_terminal as _;
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
