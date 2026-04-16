@@ -9,16 +9,18 @@ function App() {
           <span data-tauri-drag-region className="text-sm font-medium">
             VibeIsland Linux
           </span>
-          <span data-tauri-drag-region className="text-[10px] uppercase tracking-wide text-neutral-500">
+          <span
+            data-tauri-drag-region
+            className="text-[10px] uppercase tracking-wide text-neutral-500"
+          >
             phase 0
           </span>
         </header>
 
         <main className="flex-1 p-4 overflow-y-auto">
           <p className="text-sm text-neutral-400 leading-relaxed">
-            Scaffolding ready. The floating overlay is configured (decorations off,
-            always-on-top, transparent). Next up: agent adapters and the session
-            watcher.
+            Scaffolding ready. The floating overlay is configured (decorations off, always-on-top,
+            transparent). Next up: agent adapters and the session watcher.
           </p>
         </main>
 

@@ -1,0 +1,17 @@
+#!/usr/bin/env sh
+
+# Run lint-staged (handles eslint + prettier + rustfmt on staged files)
+npx lint-staged || exit 1
+
+# Fail fast if clippy complains on any Rust crate
+if git diff --cached --name-only | grep -qE '\.rs$|Cargo\.toml$|Cargo\.lock$'; then
+  if command -v cargo >/dev/null 2>&1; then
+    echo "running cargo clippy on staged Rust changes..."
+    cargo clippy --workspace --all-targets --all-features -- -D warnings || {
+      echo "clippy failed — commit blocked. Fix warnings or run with --no-verify (not recommended)."
+      exit 1
+    }
+  else
+    echo "warning: cargo not found, skipping clippy check"
+  fi
+fi
