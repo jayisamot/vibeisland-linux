@@ -92,6 +92,23 @@ impl SessionStore {
         removed
     }
 
+    /// Mark the pending action on `id` as resolved — state goes to
+    /// [`SessionState::Thinking`] and `pending_action` is cleared. Used
+    /// immediately after approve/deny/answer so the UI doesn't wait for
+    /// the next hook event to refresh.
+    pub async fn mark_resolved(&self, id: &str) -> Option<SessionDelta> {
+        let delta = {
+            let mut map = self.inner.write().await;
+            let session = map.get_mut(id)?;
+            session.state = SessionState::Thinking;
+            session.pending_action = None;
+            session.last_activity = Utc::now();
+            SessionDelta::Updated(session.clone())
+        };
+        self.persist().await;
+        Some(delta)
+    }
+
     pub async fn apply_event(&self, payload: &HookPayload) -> Option<SessionDelta> {
         let key = payload.session_key();
         let delta = {
