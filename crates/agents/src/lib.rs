@@ -10,11 +10,13 @@
 
 #![forbid(unsafe_code)]
 
+pub mod claude_code;
 pub mod event;
 pub mod response;
 pub mod session_store;
 pub mod watcher;
 
+pub use claude_code::ClaudeCodeAgent;
 pub use event::HookPayload;
 pub use response::{HookDecision, DEFAULT_TIMEOUT as HOOK_DEFAULT_TIMEOUT};
 pub use session_store::{SessionDelta, SessionStore};

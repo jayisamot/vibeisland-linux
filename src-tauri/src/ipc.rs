@@ -40,7 +40,11 @@ impl AppState {
         tokio::fs::create_dir_all(&responses_dir).await?;
 
         let store = Arc::new(SessionStore::load(sessions_path).await?);
-        let registry = Arc::new(AgentRegistry::new());
+        let mut registry = AgentRegistry::new();
+        if let Ok(adapter) = vibeisland_agents::ClaudeCodeAgent::new() {
+            registry.register(Box::new(adapter));
+        }
+        let registry = Arc::new(registry);
 
         let watcher = EventWatcher::start(events_dir, store.clone()).await?;
         spawn_delta_bridge(app.clone(), watcher.deltas.subscribe());
