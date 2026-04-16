@@ -1,5 +1,7 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 
+pub mod hook;
+
 use vibeisland_agents as _;
 use vibeisland_sound as _;
 use vibeisland_terminal as _;

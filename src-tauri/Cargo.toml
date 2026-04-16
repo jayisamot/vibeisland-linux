@@ -24,7 +24,14 @@ tokio.workspace = true
 anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
+clap.workspace = true
+directories.workspace = true
+uuid.workspace = true
+chrono.workspace = true
 
 vibeisland-agents.workspace = true
 vibeisland-terminal.workspace = true
 vibeisland-sound.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

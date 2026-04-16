@@ -29,6 +29,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 async-trait = "0.1"
+clap = { version = "4", features = ["derive"] }
+directories = "5"
+tempfile = "3"
 
 vibeisland-agents = { path = "crates/agents" }
 vibeisland-terminal = { path = "crates/terminal" }
