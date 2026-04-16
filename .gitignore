@@ -1,0 +1,41 @@
+# Rust / Tauri
+target/
+src-tauri/target/
+**/*.rs.bk
+Cargo.lock
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+*.pem
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+Thumbs.db
+
+# Build artifacts
+*.AppImage
+*.deb
+*.rpm
+*.flatpak
