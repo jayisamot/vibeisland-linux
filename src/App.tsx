@@ -1,20 +1,27 @@
+import { getCurrentWindow } from "@tauri-apps/api/window";
+
+async function beginDrag(e: React.MouseEvent) {
+  // Only main mouse button, and ignore clicks on interactive children.
+  if (e.button !== 0) return;
+  const target = e.target as HTMLElement;
+  if (target.closest("button, a, input, textarea, select")) return;
+  try {
+    await getCurrentWindow().startDragging();
+  } catch (err) {
+    console.error("startDragging failed", err);
+  }
+}
+
 function App() {
   return (
     <div className="h-screen w-screen p-2">
       <div className="h-full w-full bg-neutral-900/95 backdrop-blur rounded-2xl shadow-2xl ring-1 ring-white/5 flex flex-col overflow-hidden text-neutral-100">
         <header
-          data-tauri-drag-region
+          onMouseDown={beginDrag}
           className="h-10 px-4 flex items-center justify-between select-none cursor-grab active:cursor-grabbing border-b border-white/5"
         >
-          <span data-tauri-drag-region className="text-sm font-medium">
-            VibeIsland Linux
-          </span>
-          <span
-            data-tauri-drag-region
-            className="text-[10px] uppercase tracking-wide text-neutral-500"
-          >
-            phase 0
-          </span>
+          <span className="text-sm font-medium">VibeIsland Linux</span>
+          <span className="text-[10px] uppercase tracking-wide text-neutral-500">phase 0</span>
         </header>
 
         <main className="flex-1 p-4 overflow-y-auto">
