@@ -33,6 +33,7 @@ pub fn run() {
             ipc::uninstall_agent,
         ])
         .setup(|app| {
+            write_overlay_pidfile();
             let handle = app.handle().clone();
             tauri::async_runtime::block_on(async move {
                 match AppState::init(&handle).await {
@@ -48,4 +49,19 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Announce the overlay process to the hook binary. The hook reads
+/// this file and falls back to a transparent pass-through (no 5-min
+/// block) when the pid is missing or dead.
+fn write_overlay_pidfile() {
+    let Some(home) = hook::vibeisland_home() else {
+        return;
+    };
+    let _ = std::fs::create_dir_all(&home);
+    let pidfile = home.join("overlay.pid");
+    let tmp = home.join("overlay.pid.tmp");
+    if std::fs::write(&tmp, std::process::id().to_string()).is_ok() {
+        let _ = std::fs::rename(&tmp, &pidfile);
+    }
 }

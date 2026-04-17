@@ -34,6 +34,12 @@ async fn hook_to_store_to_response_roundtrip() {
     std::fs::create_dir_all(&events).unwrap();
     std::fs::create_dir_all(&responses).unwrap();
 
+    // Simulate a running overlay so the hook takes the blocking-approval
+    // path. Without this pidfile the hook now fails open and exits
+    // silently, which is the correct behavior for users running `claude`
+    // without VibeIsland — but not what this end-to-end test exercises.
+    std::fs::write(base.join("overlay.pid"), std::process::id().to_string()).unwrap();
+
     let store = Arc::new(SessionStore::in_memory());
     let watcher = EventWatcher::start(events.clone(), store.clone())
         .await

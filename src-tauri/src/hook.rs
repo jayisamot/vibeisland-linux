@@ -77,6 +77,13 @@ pub fn run(event: HookEvent) -> i32 {
 
     match event {
         HookEvent::PreToolUse => {
+            if !overlay_alive(&base) {
+                // No overlay running — stay transparent and let Claude
+                // Code's own permission flow handle the call. Without
+                // this, users running `claude` with no VibeIsland UI
+                // would wait DEFAULT_TIMEOUT before every tool call.
+                return 0;
+            }
             let responses_dir = base.join("responses");
             let decision =
                 response::wait_for_decision(&responses_dir, &payload.id, DEFAULT_TIMEOUT)
@@ -90,6 +97,29 @@ pub fn run(event: HookEvent) -> i32 {
             0
         }
         _ => 0,
+    }
+}
+
+/// Best-effort liveness check for the Tauri overlay. The overlay writes
+/// its pid to `<base>/overlay.pid` on startup; we consider it alive iff
+/// that file parses and `/proc/<pid>` still exists. Anything else
+/// (missing file, stale pid, non-Linux) → false, so the caller can
+/// fail open.
+fn overlay_alive(base: &Path) -> bool {
+    let Ok(content) = fs::read_to_string(base.join("overlay.pid")) else {
+        return false;
+    };
+    let Ok(pid) = content.trim().parse::<u32>() else {
+        return false;
+    };
+    #[cfg(target_os = "linux")]
+    {
+        Path::new(&format!("/proc/{pid}")).exists()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = pid;
+        false
     }
 }
 
@@ -221,7 +251,7 @@ fn print_claude_code_decision(decision: &HookDecision) {
     println!("{}", serde_json::to_string(&output).unwrap_or_default());
 }
 
-fn vibeisland_home() -> Option<PathBuf> {
+pub fn vibeisland_home() -> Option<PathBuf> {
     if let Ok(h) = env::var("VIBEISLAND_HOME") {
         return Some(PathBuf::from(h).join(".vibeisland"));
     }
@@ -322,5 +352,35 @@ mod tests {
             output["hookSpecificOutput"]["permissionDecisionReason"] = serde_json::Value::String(r);
         }
         serde_json::to_string(&output).unwrap()
+    }
+
+    #[test]
+    fn overlay_alive_false_when_pidfile_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!overlay_alive(dir.path()));
+    }
+
+    #[test]
+    fn overlay_alive_false_for_garbage_pidfile() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("overlay.pid"), "not-a-pid").unwrap();
+        assert!(!overlay_alive(dir.path()));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn overlay_alive_false_for_stale_pid() {
+        let dir = tempfile::tempdir().unwrap();
+        // PID 1 is always alive; use a deliberately huge number instead.
+        fs::write(dir.path().join("overlay.pid"), "4294967000").unwrap();
+        assert!(!overlay_alive(dir.path()));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn overlay_alive_true_for_live_pid() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("overlay.pid"), process::id().to_string()).unwrap();
+        assert!(overlay_alive(dir.path()));
     }
 }
