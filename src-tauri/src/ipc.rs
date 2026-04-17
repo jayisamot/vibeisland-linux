@@ -40,6 +40,10 @@ impl AppState {
         tokio::fs::create_dir_all(&responses_dir).await?;
 
         let store = Arc::new(SessionStore::load(sessions_path).await?);
+        let pruned = store.prune_stale().await;
+        if !pruned.is_empty() {
+            tracing::info!(count = pruned.len(), "pruned stale sessions at startup");
+        }
         let mut registry = AgentRegistry::new();
         if let Ok(adapter) = vibeisland_agents::ClaudeCodeAgent::new() {
             registry.register(Box::new(adapter));

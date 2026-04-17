@@ -31,6 +31,12 @@ pub enum SessionDelta {
 /// close transition before we drop it.
 const CLOSED_GRACE: Duration = Duration::from_secs(5 * 60);
 
+/// Any non-closed session that hasn't had a hook event in this long is
+/// presumed dead. Covers the common case where the user kills the
+/// terminal mid-`Thinking` or -`Idle` — Claude Code never emits a
+/// `stop` in that path, so the row would otherwise live forever.
+const STALE_TTL: Duration = Duration::from_secs(10 * 60);
+
 #[derive(Default, Serialize, Deserialize)]
 struct SnapshotV1 {
     schema_version: u32,
@@ -148,6 +154,28 @@ impl SessionStore {
             let mut map = self.inner.write().await;
             map.retain(|id, s| {
                 let stale = matches!(s.state, SessionState::Closed) && s.last_activity < cutoff;
+                if stale {
+                    removed.push(id.clone());
+                }
+                !stale
+            });
+        }
+        if !removed.is_empty() {
+            self.persist().await;
+        }
+        removed
+    }
+
+    /// Drop any session — regardless of state — whose `last_activity`
+    /// is older than `STALE_TTL`. Intended to run once on overlay
+    /// startup to clear ghost rows left behind by killed terminals.
+    pub async fn prune_stale(&self) -> Vec<String> {
+        let cutoff = Utc::now() - chrono::Duration::from_std(STALE_TTL).unwrap();
+        let mut removed = Vec::new();
+        {
+            let mut map = self.inner.write().await;
+            map.retain(|id, s| {
+                let stale = s.last_activity < cutoff;
                 if stale {
                     removed.push(id.clone());
                 }
@@ -395,6 +423,76 @@ mod tests {
         assert_eq!(sessions.len(), 1);
         // key = cwd
         assert_eq!(sessions[0].id, "/home/jay/code");
+    }
+
+    #[tokio::test]
+    async fn session_key_reads_session_id_from_payload_body() {
+        // Claude Code puts its session UUID inside the JSON it pipes to
+        // the hook on stdin, not in an env var. Two terminals in the
+        // same cwd must therefore be kept distinct by that field.
+        let store = SessionStore::in_memory();
+        let mut p1 = mk_payload("pre-tool-use", None, Some("Bash"));
+        p1.payload = Some(serde_json::json!({
+            "tool_name": "Bash",
+            "tool_input": { "command": "ls" },
+            "session_id": "uuid-tab-1",
+        }));
+        let mut p2 = mk_payload("pre-tool-use", None, Some("Bash"));
+        p2.payload = Some(serde_json::json!({
+            "tool_name": "Bash",
+            "tool_input": { "command": "ls" },
+            "session_id": "uuid-tab-2",
+        }));
+
+        store.apply_event(&p1).await;
+        store.apply_event(&p2).await;
+
+        let sessions = store.list().await;
+        assert_eq!(sessions.len(), 2, "two distinct sessions expected");
+        let ids: std::collections::BTreeSet<_> = sessions.iter().map(|s| s.id.clone()).collect();
+        assert!(ids.contains("uuid-tab-1"));
+        assert!(ids.contains("uuid-tab-2"));
+    }
+
+    #[tokio::test]
+    async fn prune_stale_drops_sessions_past_ttl_regardless_of_state() {
+        let store = SessionStore::in_memory();
+        // Seed two sessions via real events.
+        store
+            .apply_event(&mk_payload("pre-tool-use", Some("fresh"), Some("Bash")))
+            .await;
+        store
+            .apply_event(&mk_payload("pre-tool-use", Some("ancient"), Some("Bash")))
+            .await;
+        // Rewind one of them past the TTL. We reach into the inner
+        // map directly — there's no public setter, and that's fine
+        // since this is the test module.
+        {
+            let mut map = store.inner.write().await;
+            let ancient = map.get_mut("ancient").unwrap();
+            ancient.last_activity = Utc::now() - chrono::Duration::hours(1);
+        }
+        let removed = store.prune_stale().await;
+        assert_eq!(removed, vec!["ancient".to_string()]);
+        let list = store.list().await;
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].id, "fresh");
+    }
+
+    #[tokio::test]
+    async fn top_level_session_id_wins_over_payload() {
+        // If both are present the top-level (env-var origin) takes precedence.
+        let store = SessionStore::in_memory();
+        let mut p = mk_payload("pre-tool-use", Some("env-wins"), Some("Bash"));
+        p.payload = Some(serde_json::json!({
+            "tool_name": "Bash",
+            "tool_input": { "command": "ls" },
+            "session_id": "payload-loses",
+        }));
+        store.apply_event(&p).await;
+        let sessions = store.list().await;
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].id, "env-wins");
     }
 
     #[tokio::test]

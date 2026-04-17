@@ -59,14 +59,29 @@ impl HookPayload {
         "claude-code"
     }
 
-    /// Stable session key: prefer the agent-side session id, fall back
-    /// to cwd so two terminals in the same folder share a row.
+    /// Stable session key. Priority:
+    /// 1. top-level `session_id` (set from env vars like `CLAUDE_SESSION_ID`)
+    /// 2. `payload.session_id` — Claude Code passes its UUID here on stdin
+    /// 3. `cwd` — fallback so two terminals in the same folder share a row
+    /// 4. `pid:<n>` — last resort
     pub fn session_key(&self) -> String {
-        self.session_id.clone().unwrap_or_else(|| {
-            self.cwd
-                .clone()
-                .unwrap_or_else(|| format!("pid:{}", self.pid))
-        })
+        self.session_id
+            .clone()
+            .or_else(|| self.payload_session_id())
+            .unwrap_or_else(|| {
+                self.cwd
+                    .clone()
+                    .unwrap_or_else(|| format!("pid:{}", self.pid))
+            })
+    }
+
+    /// `session_id` pulled out of the stdin JSON body, if any.
+    fn payload_session_id(&self) -> Option<String> {
+        self.payload
+            .as_ref()?
+            .get("session_id")?
+            .as_str()
+            .map(String::from)
     }
 
     /// Tool name when the payload is from a `PreToolUse` / `PostToolUse`.
