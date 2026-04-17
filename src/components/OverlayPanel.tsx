@@ -1,19 +1,7 @@
 import { useState } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAgentState } from "@/hooks/useAgentState";
 import type { AgentStatus } from "@/types/agent";
 import { AgentCard } from "./AgentCard";
-
-async function beginDrag(e: React.MouseEvent) {
-  if (e.button !== 0) return;
-  const target = e.target as HTMLElement;
-  if (target.closest("button, a, input, textarea, select")) return;
-  try {
-    await getCurrentWindow().startDragging();
-  } catch (err) {
-    console.error("startDragging failed", err);
-  }
-}
 
 export function OverlayPanel() {
   const { sessions, agents, approve, deny, focusTerminal, installAgent, uninstallAgent } =
@@ -28,7 +16,7 @@ export function OverlayPanel() {
     <div className="h-screen w-screen p-2">
       <div className="h-full w-full bg-neutral-900/95 backdrop-blur rounded-2xl shadow-2xl ring-1 ring-white/5 flex flex-col overflow-hidden text-neutral-100">
         <header
-          onMouseDown={beginDrag}
+          data-tauri-drag-region
           className="h-10 px-4 flex items-center justify-between select-none cursor-grab active:cursor-grabbing border-b border-white/5"
         >
           <div className="flex items-center gap-2">
