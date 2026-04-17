@@ -1,0 +1,37 @@
+[package]
+name = "vibeisland-linux"
+description = "Supervise your AI coding agents from a Linux overlay panel"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "vibeisland_linux_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+tauri.workspace = true
+tauri-plugin-opener.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+directories.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+
+vibeisland-agents.workspace = true
+vibeisland-terminal.workspace = true
+vibeisland-sound.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
